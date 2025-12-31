@@ -1,5 +1,5 @@
 // PoloGroundsMap.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -233,7 +233,38 @@ const markerIcon = (type, labelText = '', showLabel = false, isAirport = false, 
   });
 };
 
+/* =======================
+   MAP FIT BOUNDS COMPONENT
+======================= */
 
+function FitRouteBounds({ routeCoords, infoPanelHeight, isMobile }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!routeCoords || routeCoords.length === 0 || !isMobile) return;
+
+    // Calculate the bounds of the route
+    const bounds = L.latLngBounds(routeCoords);
+    
+    // Get current map size
+    const mapSize = map.getSize();
+    
+    // Calculate the height of the info panel in pixels
+    const filterBarHeight = 110; // Approximate height of filter bar
+    const padding = 20; // Additional padding
+    
+    // Adjust the bottom padding to account for the info panel
+    const paddingOptions = {
+      paddingTopLeft: [padding, filterBarHeight + padding],
+      paddingBottomRight: [padding, infoPanelHeight + padding]
+    };
+
+    // Fit the bounds with the adjusted padding
+    map.fitBounds(bounds, paddingOptions);
+  }, [routeCoords, infoPanelHeight, isMobile, map]);
+
+  return null;
+}
 
 /* =======================
    MAIN COMPONENT
@@ -248,6 +279,8 @@ export default function PoloGroundsMap() {
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [infoPanelHeight, setInfoPanelHeight] = useState(0);
+  const infoPanelRef = useRef(null);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -257,6 +290,14 @@ export default function PoloGroundsMap() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Measure info panel height for mobile
+  useEffect(() => {
+    if (isMobile && infoPanelRef.current) {
+      const height = infoPanelRef.current.offsetHeight;
+      setInfoPanelHeight(height);
+    }
+  }, [selectedGround, routeData, isMobile]);
 
   const handleFilterChange = (newFilter) => {
     setFilter(newFilter);
@@ -564,7 +605,9 @@ export default function PoloGroundsMap() {
 
       {/* INFO PANEL - Responsive */}
       {selectedGround && (
-        <div style={{
+        <div 
+          ref={infoPanelRef}
+          style={{
           position: 'fixed',
           top: isMobile ? 'auto' : '180px',
           bottom: isMobile ? 0 : 'auto',
@@ -579,7 +622,7 @@ export default function PoloGroundsMap() {
           boxShadow: isMobile ? '0 -4px 20px rgba(0,0,0,0.2)' : '0 4px 20px rgba(0,0,0,0.15)',
           minWidth: isMobile ? 'auto' : '320px',
           maxWidth: isMobile ? '100%' : '380px',
-          maxHeight: isMobile ? 'auto' : 'calc(100vh - 200px)',
+          maxHeight: isMobile ? '40vh' : 'calc(100vh - 200px)',
           overflowY: 'auto',
           animation: isMobile ? 'slideUp 0.3s ease' : 'slideUp 0.5s ease',
           backdropFilter: 'blur(10px)'
@@ -630,50 +673,88 @@ export default function PoloGroundsMap() {
             >×</button>
           </div>
 
-          <div style={{
-            display: 'inline-block',
-            background: typeConfig[selectedGround.type].bg,
-            color: typeConfig[selectedGround.type].color,
-            padding: isMobile ? '4px 8px' : '6px 12px',
-            borderRadius: '3px',
-            fontSize: isMobile ? '9px' : '11px',
-            fontWeight: '600',
-            marginBottom: isMobile ? '8px' : '16px',
-            letterSpacing: '0.3px',
-            textTransform: 'uppercase'
-          }}>
-            {typeConfig[selectedGround.type].icon} {selectedGround.type}
-          </div>
-
-          <div style={{ marginBottom: isMobile ? '8px' : '12px' }}>
+          {isMobile ? (
+            // Mobile: Compact single-line layout
             <div style={{
-              fontSize: isMobile ? '10px' : '13px',
-              marginBottom: isMobile ? '4px' : '8px',
+              fontSize: '10px',
+              marginBottom: '10px',
               color: '#555',
-              lineHeight: '1.3'
+              lineHeight: '1.4'
             }}>
-              <strong>Location:</strong> {selectedGround.district}, {selectedGround.region}
+              <span style={{
+                display: 'inline-block',
+                background: typeConfig[selectedGround.type].bg,
+                color: typeConfig[selectedGround.type].color,
+                padding: '3px 6px',
+                borderRadius: '3px',
+                fontSize: '8px',
+                fontWeight: '600',
+                letterSpacing: '0.3px',
+                textTransform: 'uppercase',
+                marginRight: '6px'
+              }}>
+                {typeConfig[selectedGround.type].icon} {selectedGround.type}
+              </span>
+              <span style={{ color: '#666' }}>
+                {selectedGround.district}, {selectedGround.region}
+              </span>
+              <span style={{ 
+                color: typeConfig[selectedGround.type].color,
+                fontWeight: '600',
+                marginLeft: '6px'
+              }}>
+                • {selectedGround.elevation}
+              </span>
             </div>
-            <div style={{
-              fontSize: isMobile ? '10px' : '13px',
-              fontWeight: '600',
-              color: typeConfig[selectedGround.type].color,
-              marginBottom: isMobile ? '8px' : '12px'
-            }}>
-              <strong>Elevation:</strong> {selectedGround.elevation}
-            </div>
-          </div>
+          ) : (
+            // Desktop: Original layout
+            <>
+              <div style={{
+                display: 'inline-block',
+                background: typeConfig[selectedGround.type].bg,
+                color: typeConfig[selectedGround.type].color,
+                padding: '6px 12px',
+                borderRadius: '3px',
+                fontSize: '11px',
+                fontWeight: '600',
+                marginBottom: '16px',
+                letterSpacing: '0.3px',
+                textTransform: 'uppercase'
+              }}>
+                {typeConfig[selectedGround.type].icon} {selectedGround.type}
+              </div>
 
-          <div style={{
-            fontSize: isMobile ? '10px' : '13px',
-            color: '#666',
-            lineHeight: isMobile ? '1.4' : '1.6',
-            paddingTop: isMobile ? '8px' : '12px',
-            borderTop: '1px solid #e5e5e5',
-            marginBottom: isMobile ? '10px' : '16px'
-          }}>
-            {selectedGround.notes}
-          </div>
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{
+                  fontSize: '13px',
+                  marginBottom: '8px',
+                  color: '#555',
+                  lineHeight: '1.3'
+                }}>
+                  <strong>Location:</strong> {selectedGround.district}, {selectedGround.region}
+                </div>
+                <div style={{
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  color: typeConfig[selectedGround.type].color,
+                  marginBottom: '12px'
+                }}>
+                  <strong>Elevation:</strong> {selectedGround.elevation}
+                </div>
+              </div>
+
+              <div style={{
+                fontSize: '13px',
+                color: '#666',
+                lineHeight: '1.6',
+                paddingTop: '12px',
+                borderTop: '1px solid #e5e5e5',
+                marginBottom: '16px'
+              }}>
+                {selectedGround.notes}
+              </div>
+            </>
+          )}
 
           {routeData && (
             <div style={{
@@ -693,20 +774,28 @@ export default function PoloGroundsMap() {
               <div style={{ 
                 fontSize: isMobile ? '9px' : '12px', 
                 color: '#666', 
-                marginBottom: isMobile ? '3px' : '6px',
+                marginBottom: isMobile ? '4px' : '6px',
                 lineHeight: '1.4'
               }}>
                 <strong>Nearest Airport:</strong> {routeData.nearestAirport.name} ({routeData.nearestAirport.code})
+                {isMobile && routeData.roadRoute && (
+                  <span>
+                    {' '}(~{routeData.roadRoute.distance.toFixed(0)} km
+                    {routeData.roadRoute.duration && `, ${Math.round(routeData.roadRoute.duration)} min`})
+                  </span>
+                )}
               </div>
-              <div style={{ 
-                fontSize: isMobile ? '9px' : '12px', 
-                color: '#666', 
-                marginBottom: isMobile ? '3px' : '6px',
-                lineHeight: '1.4'
-              }}>
-                <strong>Road:</strong> {routeData.roadRoute.distance.toFixed(1)} km
-                {routeData.roadRoute.duration && ` • ~${Math.round(routeData.roadRoute.duration)} min`}
-              </div>
+              {!isMobile && routeData.roadRoute && (
+                <div style={{ 
+                  fontSize: '12px', 
+                  color: '#666', 
+                  marginBottom: '6px',
+                  lineHeight: '1.4'
+                }}>
+                  <strong>Road:</strong> {routeData.roadRoute.distance.toFixed(1)} km
+                  {routeData.roadRoute.duration && ` • ~${Math.round(routeData.roadRoute.duration)} min`}
+                </div>
+              )}
               {routeData.flightInfo && (
                 <div style={{
                   fontSize: isMobile ? '8px' : '11px',
@@ -714,10 +803,9 @@ export default function PoloGroundsMap() {
                   marginTop: isMobile ? '4px' : '10px',
                   paddingTop: isMobile ? '4px' : '10px',
                   borderTop: '1px solid rgba(0,0,0,0.1)',
-                  fontStyle: 'italic',
                   lineHeight: '1.3'
                 }}>
-                  Via ISB: {routeData.flightInfo.distance.toFixed(0)}km to {routeData.nearestAirport.code} ({routeData.flightInfo.time})
+                  ISB↔{routeData.nearestAirport.code}: {routeData.flightInfo.time}
                 </div>
               )}
             </div>
@@ -757,6 +845,15 @@ export default function PoloGroundsMap() {
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
+
+        {/* Route bounds fitting for mobile */}
+        {isMobile && routeData && (
+          <FitRouteBounds 
+            routeCoords={routeData.roadRoute.coordinates}
+            infoPanelHeight={infoPanelHeight}
+            isMobile={isMobile}
+          />
+        )}
 
         {/* POLO GROUND MARKERS */}
         {visible.map((g, i) => {
