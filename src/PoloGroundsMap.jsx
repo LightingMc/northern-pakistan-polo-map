@@ -391,19 +391,21 @@ export default function PoloGroundsMap() {
           textTransform: 'uppercase',
           fontFamily: 'Georgia, serif'
         }}>
-          Polo Grounds of Pakistan
+          {isMobile ? 'Polo Grounds Gilgit' : 'Polo Grounds of Pakistan'}
         </h1>
-        <p style={{
-          textAlign: 'center',
-          color: '#b8b5ad',
-          margin: '8px 0 0 0',
-          fontSize: isMobile ? '0.8em' : '1em',
-          fontWeight: '300',
-          letterSpacing: isMobile ? '0.5px' : '1px',
-          fontFamily: 'Georgia, serif'
-        }}>
-          {isMobile ? `${poloGrounds.length} Historic Fields` : `A Cartographic Survey of ${poloGrounds.length} Historic Playing Fields`}
-        </p>
+        {!isMobile && (
+          <p style={{
+            textAlign: 'center',
+            color: '#b8b5ad',
+            margin: '8px 0 0 0',
+            fontSize: '1em',
+            fontWeight: '300',
+            letterSpacing: '1px',
+            fontFamily: 'Georgia, serif'
+          }}>
+            A Cartographic Survey of {poloGrounds.length} Historic Playing Fields
+          </p>
+        )}
       </div>
 
       {/* FILTER BAR - Desktop */}
@@ -675,56 +677,47 @@ export default function PoloGroundsMap() {
 
           {routeData && (
             <div style={{
-              padding: isMobile ? '10px 12px' : '14px',
+              padding: isMobile ? '8px 10px' : '14px',
               background: 'rgba(139,71,137,0.08)',
               borderRadius: '4px',
               borderLeft: `3px solid ${typeConfig.airport.color}`
             }}>
               <div style={{ 
                 fontWeight: '600', 
-                marginBottom: isMobile ? '7px' : '10px', 
+                marginBottom: isMobile ? '6px' : '10px', 
                 color: '#555', 
                 fontSize: isMobile ? '11px' : '14px' 
               }}>
-                {typeConfig.airport.icon} Travel Information
+                {typeConfig.airport.icon} Travel Info
               </div>
               <div style={{ 
-                fontSize: isMobile ? '10px' : '12px', 
+                fontSize: isMobile ? '9px' : '12px', 
                 color: '#666', 
-                marginBottom: isMobile ? '4px' : '6px',
+                marginBottom: isMobile ? '3px' : '6px',
                 lineHeight: '1.4'
               }}>
                 <strong>Nearest Airport:</strong> {routeData.nearestAirport.name} ({routeData.nearestAirport.code})
               </div>
               <div style={{ 
-                fontSize: isMobile ? '10px' : '12px', 
+                fontSize: isMobile ? '9px' : '12px', 
                 color: '#666', 
-                marginBottom: isMobile ? '4px' : '6px',
+                marginBottom: isMobile ? '3px' : '6px',
                 lineHeight: '1.4'
               }}>
-                <strong>Road Distance:</strong> {routeData.roadRoute.distance.toFixed(1)} km
+                <strong>Road:</strong> {routeData.roadRoute.distance.toFixed(1)} km
+                {routeData.roadRoute.duration && ` • ~${Math.round(routeData.roadRoute.duration)} min`}
               </div>
-              {routeData.roadRoute.duration && (
-                <div style={{ 
-                  fontSize: isMobile ? '10px' : '12px', 
-                  color: '#666', 
-                  marginBottom: isMobile ? '4px' : '6px',
-                  lineHeight: '1.4'
-                }}>
-                  <strong>Drive Time:</strong> ~{Math.round(routeData.roadRoute.duration)} minutes
-                </div>
-              )}
               {routeData.flightInfo && (
                 <div style={{
-                  fontSize: isMobile ? '9px' : '11px',
+                  fontSize: isMobile ? '8px' : '11px',
                   color: '#888',
-                  marginTop: isMobile ? '6px' : '10px',
-                  paddingTop: isMobile ? '6px' : '10px',
+                  marginTop: isMobile ? '4px' : '10px',
+                  paddingTop: isMobile ? '4px' : '10px',
                   borderTop: '1px solid rgba(0,0,0,0.1)',
                   fontStyle: 'italic',
                   lineHeight: '1.3'
                 }}>
-                  Via Islamabad: {routeData.flightInfo.distance.toFixed(0)} km flight to {routeData.nearestAirport.code} (~{routeData.flightInfo.time})
+                  Via ISB: {routeData.flightInfo.distance.toFixed(0)}km to {routeData.nearestAirport.code} ({routeData.flightInfo.time})
                 </div>
               )}
             </div>
@@ -746,11 +739,13 @@ export default function PoloGroundsMap() {
 
       {/* MAP */}
       <MapContainer
-        center={[35.8, 74.0]}
+        center={isMobile ? [36.2, 74.0] : [35.8, 74.0]}
         zoom={isMobile ? 6 : 7}
+        minZoom={isMobile ? 5.2 : 6.2}
+        maxZoom={isMobile ? 7.2 : 8.2}
         style={{
           height: isMobile 
-            ? 'calc(100vh - 130px)' 
+            ? 'calc(100vh - 110px)' 
             : 'calc(100vh - 185px)',
           width: '100%',
           animation: 'fadeIn 0.8s ease'
