@@ -1,6 +1,6 @@
 // PoloGroundsMap.jsx
-import { useState } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
+import { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 /* =======================
@@ -83,7 +83,7 @@ const typeConfig = {
 };
 
 /* =======================
-   HELPERS (unchanged)
+   HELPERS
 ======================= */
 
 function calculateDistance(lat1, lng1, lat2, lng2) {
@@ -103,7 +103,6 @@ function getLabelPosition(itemLat, itemLng, otherLat, otherLng) {
   const horizontalPos = itemLng < otherLng ? 'left' : 'right';
   const latDiff = Math.abs(itemLat - otherLat);
   const lngDiff = Math.abs(itemLng - otherLng);
-  // prefer vertical if lat difference dominates
   return latDiff > lngDiff ? verticalPos : horizontalPos;
 }
 
@@ -175,20 +174,14 @@ async function fetchRoadRoute(fromLat, fromLng, toLat, toLng) {
 }
 
 /* =======================
-   NEW: stable divIcon generator
-   - label is absolutely positioned so marker size/anchor never changes
-   - pointer-events: none on label so marker remains interactive
-   - iconAnchor points to the circle center so Leaflet centering doesn't shift
+   MARKER ICON
 ======================= */
 
 const markerIcon = (type, labelText = '', showLabel = false, isAirport = false, labelPosition = 'top') => {
   const config = typeConfig[type];
-  // fixed marker visual size - airports are 3x smaller than polo grounds
   const markerDiameter = isAirport ? 7 : 20;
   const border = isAirport ? 1.5 : 2.5;
 
-  // Styling for label placement (we will use CSS classes defined inline in html)
-  // labelPosition values: 'top' | 'bottom' | 'left' | 'right'
   const html = `
     <div class="polo-marker-root" style="position: relative; width: ${markerDiameter}px; height: ${markerDiameter}px; display: inline-block;">
       <div class="polo-marker-bubble" style="
@@ -222,19 +215,14 @@ const markerIcon = (type, labelText = '', showLabel = false, isAirport = false, 
       ">${labelText}</div>` : '' }
     </div>
     <style>
-      /* label positioning styles inside the icon so Leaflet receives a single HTML blob */
       .polo-marker-label--top { left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); }
       .polo-marker-label--bottom { left: 50%; top: calc(100% + 6px); transform: translateX(-50%); }
       .polo-marker-label--left { right: calc(100% + 6px); top: 50%; transform: translateY(-50%); }
       .polo-marker-label--right { left: calc(100% + 6px); top: 50%; transform: translateY(-50%); }
-
-      /* ensure marker container does not change size when label toggles */
       .polo-marker-root { display:inline-block; vertical-align: middle; }
     </style>
   `;
 
-  // Make iconAnchor point to center bottom of the visual marker so the marker location is steady.
-  // Icon anchor coordinates are [x, y] px in the icon container; set y such that the center is anchored.
   const iconAnchor = [Math.round(markerDiameter / 2), Math.round(markerDiameter / 2)];
 
   return L.divIcon({
@@ -244,6 +232,8 @@ const markerIcon = (type, labelText = '', showLabel = false, isAirport = false, 
     iconAnchor
   });
 };
+
+
 
 /* =======================
    MAIN COMPONENT
@@ -256,11 +246,23 @@ export default function PoloGroundsMap() {
   const [selectedGround, setSelectedGround] = useState(null);
   const [routeData, setRouteData] = useState(null);
   const [loadingRoute, setLoadingRoute] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const handleFilterChange = (newFilter) => {
     setFilter(newFilter);
     setSelectedGround(null);
     setRouteData(null);
+    setShowFilters(false);
   };
 
   const visible =
@@ -322,7 +324,8 @@ export default function PoloGroundsMap() {
       width: '100%',
       background: '#f8f6f1',
       position: 'relative',
-      fontFamily: 'Georgia, "Times New Roman", serif'
+      fontFamily: 'Georgia, "Times New Roman", serif',
+      overflow: 'hidden'
     }}>
       <style>{`
         @keyframes fadeIn {
@@ -333,6 +336,10 @@ export default function PoloGroundsMap() {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes slideIn {
+          from { transform: translateX(100%); }
+          to { transform: translateX(0); }
+        }
         .filter-btn {
           transition: all 0.2s ease;
           font-family: 'Georgia', serif;
@@ -341,26 +348,46 @@ export default function PoloGroundsMap() {
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
-        /* ensure leaflet marker z-order baseline */
+        .filter-btn:active {
+          transform: scale(0.98);
+        }
         .leaflet-marker-icon { z-index: 1000 !important; }
-        /* hovered / selected markers will show label inside divIcon; label has very high z */
+        
+        /* Mobile-specific styles */
+        @media (max-width: 767px) {
+          .leaflet-control-zoom {
+            margin-right: 10px !important;
+            margin-bottom: 80px !important;
+          }
+          .leaflet-control-attribution {
+            font-size: 9px !important;
+          }
+        }
+
+        /* Prevent text selection on buttons */
+        .filter-btn, button {
+          -webkit-tap-highlight-color: transparent;
+          -webkit-touch-callout: none;
+          -webkit-user-select: none;
+          user-select: none;
+        }
       `}</style>
 
       {/* HEADER */}
       <div style={{
         background: 'linear-gradient(to bottom, #2f2f2f, #1a1a1a)',
         borderBottom: '1px solid #C9A961',
-        padding: '28px 40px',
+        padding: isMobile ? '16px 16px' : '28px 40px',
         animation: 'fadeIn 0.6s ease',
         boxShadow: '0 2px 12px rgba(0,0,0,0.15)'
       }}>
         <h1 style={{
           margin: 0,
           color: '#C9A961',
-          fontSize: '2.2em',
+          fontSize: isMobile ? '1.3em' : '2.2em',
           fontWeight: '400',
           textAlign: 'center',
-          letterSpacing: '3px',
+          letterSpacing: isMobile ? '1.5px' : '3px',
           textTransform: 'uppercase',
           fontFamily: 'Georgia, serif'
         }}>
@@ -369,109 +396,214 @@ export default function PoloGroundsMap() {
         <p style={{
           textAlign: 'center',
           color: '#b8b5ad',
-          margin: '10px 0 0 0',
-          fontSize: '1em',
+          margin: '8px 0 0 0',
+          fontSize: isMobile ? '0.8em' : '1em',
           fontWeight: '300',
-          letterSpacing: '1px',
+          letterSpacing: isMobile ? '0.5px' : '1px',
           fontFamily: 'Georgia, serif'
         }}>
-          A Cartographic Survey of {poloGrounds.length} Historic Playing Fields
+          {isMobile ? `${poloGrounds.length} Historic Fields` : `A Cartographic Survey of ${poloGrounds.length} Historic Playing Fields`}
         </p>
       </div>
 
-      {/* FILTER BAR */}
-      <div style={{
-        background: '#e8e6e1',
-        borderBottom: '1px solid #d0cdc5',
-        padding: '18px 30px',
-        display: 'flex',
-        justifyContent: 'center',
-        gap: '14px',
-        flexWrap: 'wrap',
-        animation: 'fadeIn 0.8s ease'
-      }}>
-        <button
-          className="filter-btn"
-          onClick={() => handleFilterChange('all')}
-          style={{
-            padding: '10px 22px',
-            borderRadius: '4px',
-            border: filter === 'all' ? '2px solid #C9A961' : '2px solid #c8c5bd',
-            background: filter === 'all' ? '#2f2f2f' : 'white',
-            color: filter === 'all' ? '#C9A961' : '#5a5a5a',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: filter === 'all' ? '600' : '400',
-            letterSpacing: '0.5px'
-          }}
-        >
-          All Grounds ({stats.total})
-        </button>
-        {Object.entries(typeConfig).filter(([key]) => key !== 'airport').map(([key, config]) => (
+      {/* FILTER BAR - Desktop */}
+      {!isMobile && (
+        <div style={{
+          background: '#e8e6e1',
+          borderBottom: '1px solid #d0cdc5',
+          padding: '18px 30px',
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '14px',
+          flexWrap: 'wrap',
+          animation: 'fadeIn 0.8s ease'
+        }}>
           <button
-            key={key}
             className="filter-btn"
-            onClick={() => handleFilterChange(key)}
+            onClick={() => handleFilterChange('all')}
             style={{
               padding: '10px 22px',
               borderRadius: '4px',
-              border: `2px solid ${filter === key ? config.color : '#c8c5bd'}`,
-              background: filter === key ? config.bg : 'white',
-              color: filter === key ? config.color : '#5a5a5a',
+              border: filter === 'all' ? '2px solid #C9A961' : '2px solid #c8c5bd',
+              background: filter === 'all' ? '#2f2f2f' : 'white',
+              color: filter === 'all' ? '#C9A961' : '#5a5a5a',
               cursor: 'pointer',
               fontSize: '14px',
-              fontWeight: filter === key ? '600' : '400',
-              letterSpacing: '0.5px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
+              fontWeight: filter === 'all' ? '600' : '400',
+              letterSpacing: '0.5px'
             }}
           >
-            <span style={{ fontSize: '10px' }}>{config.icon}</span>
-            {config.label} ({stats[key]})
+            All Grounds ({stats.total})
           </button>
-        ))}
-      </div>
+          {Object.entries(typeConfig).filter(([key]) => key !== 'airport').map(([key, config]) => (
+            <button
+              key={key}
+              className="filter-btn"
+              onClick={() => handleFilterChange(key)}
+              style={{
+                padding: '10px 22px',
+                borderRadius: '4px',
+                border: `2px solid ${filter === key ? config.color : '#c8c5bd'}`,
+                background: filter === key ? config.bg : 'white',
+                color: filter === key ? config.color : '#5a5a5a',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: filter === key ? '600' : '400',
+                letterSpacing: '0.5px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <span style={{ fontSize: '10px' }}>{config.icon}</span>
+              {config.label} ({stats[key]})
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* INFO PANEL - Shows selected ground details */}
+      {/* FILTER BAR - Mobile (Bottom Sheet Style) */}
+      {isMobile && (
+        <>
+          <div style={{
+            background: '#e8e6e1',
+            borderBottom: '1px solid #d0cdc5',
+            padding: '12px 16px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ fontSize: '13px', color: '#666', fontWeight: '500' }}>
+              {filter === 'all' ? `All Grounds (${stats.total})` : `${typeConfig[filter].label} (${stats[filter]})`}
+            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '4px',
+                border: '2px solid #C9A961',
+                background: showFilters ? '#2f2f2f' : 'white',
+                color: showFilters ? '#C9A961' : '#5a5a5a',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '600'
+              }}
+            >
+              {showFilters ? '✕ Close' : '☰ Filter'}
+            </button>
+          </div>
+
+          {showFilters && (
+            <div style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              background: 'white',
+              borderTop: '2px solid #C9A961',
+              boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
+              zIndex: 2000,
+              maxHeight: '60vh',
+              overflowY: 'auto',
+              animation: 'slideUp 0.3s ease',
+              padding: '20px 16px'
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr',
+                gap: '12px'
+              }}>
+                <button
+                  className="filter-btn"
+                  onClick={() => handleFilterChange('all')}
+                  style={{
+                    padding: '14px 20px',
+                    borderRadius: '6px',
+                    border: filter === 'all' ? '2px solid #C9A961' : '2px solid #ddd',
+                    background: filter === 'all' ? '#2f2f2f' : 'white',
+                    color: filter === 'all' ? '#C9A961' : '#5a5a5a',
+                    cursor: 'pointer',
+                    fontSize: '15px',
+                    fontWeight: filter === 'all' ? '600' : '400',
+                    textAlign: 'left'
+                  }}
+                >
+                  All Grounds ({stats.total})
+                </button>
+                {Object.entries(typeConfig).filter(([key]) => key !== 'airport').map(([key, config]) => (
+                  <button
+                    key={key}
+                    className="filter-btn"
+                    onClick={() => handleFilterChange(key)}
+                    style={{
+                      padding: '14px 20px',
+                      borderRadius: '6px',
+                      border: `2px solid ${filter === key ? config.color : '#ddd'}`,
+                      background: filter === key ? config.bg : 'white',
+                      color: filter === key ? config.color : '#5a5a5a',
+                      cursor: 'pointer',
+                      fontSize: '15px',
+                      fontWeight: filter === key ? '600' : '400',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontSize: '14px' }}>{config.icon}</span>
+                    <span>{config.label} ({stats[key]})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* INFO PANEL - Responsive */}
       {selectedGround && (
         <div style={{
-          position: 'absolute',
-          top: '180px',
-          right: '24px',
-          zIndex: 1000,
-          background: 'rgba(255,255,255,0.97)',
-          borderRadius: '6px',
-          padding: '24px',
-          border: `2px solid ${typeConfig[selectedGround.type].color}`,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          minWidth: '320px',
-          maxWidth: '380px',
-          animation: 'slideUp 0.5s ease',
+          position: 'fixed',
+          top: isMobile ? 'auto' : '180px',
+          bottom: isMobile ? 0 : 'auto',
+          right: isMobile ? 0 : '24px',
+          left: isMobile ? 0 : 'auto',
+          zIndex: 1500,
+          background: 'rgba(255,255,255,0.98)',
+          borderRadius: isMobile ? '12px 12px 0 0' : '6px',
+          padding: isMobile ? '12px 14px 16px 14px' : '24px',
+          border: isMobile ? 'none' : `2px solid ${typeConfig[selectedGround.type].color}`,
+          borderTop: isMobile ? `3px solid ${typeConfig[selectedGround.type].color}` : `2px solid ${typeConfig[selectedGround.type].color}`,
+          boxShadow: isMobile ? '0 -4px 20px rgba(0,0,0,0.2)' : '0 4px 20px rgba(0,0,0,0.15)',
+          minWidth: isMobile ? 'auto' : '320px',
+          maxWidth: isMobile ? '100%' : '380px',
+          maxHeight: isMobile ? 'auto' : 'calc(100vh - 200px)',
+          overflowY: 'auto',
+          animation: isMobile ? 'slideUp 0.3s ease' : 'slideUp 0.5s ease',
           backdropFilter: 'blur(10px)'
         }}>
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-start',
-            marginBottom: '16px',
-            paddingBottom: '12px',
+            marginBottom: isMobile ? '8px' : '16px',
+            paddingBottom: isMobile ? '8px' : '12px',
             borderBottom: `2px solid ${typeConfig[selectedGround.type].color}`
           }}>
-            <div>
+            <div style={{ flex: 1 }}>
               <h3 style={{
-                margin: '0 0 6px 0',
+                margin: '0 0 3px 0',
                 color: '#2f2f2f',
-                fontSize: '20px',
+                fontSize: isMobile ? '14px' : '20px',
                 fontWeight: '600',
-                letterSpacing: '0.5px',
-                lineHeight: '1.3'
+                letterSpacing: '0.3px',
+                lineHeight: '1.2'
               }}>
                 {selectedGround.name}
               </h3>
               {selectedGround.altName && (
                 <div style={{
-                  fontSize: '13px',
+                  fontSize: isMobile ? '10px' : '12px',
                   color: '#777',
                   fontStyle: 'italic'
                 }}>
@@ -486,9 +618,12 @@ export default function PoloGroundsMap() {
                 border: 'none',
                 color: '#999',
                 cursor: 'pointer',
-                fontSize: '24px',
+                fontSize: isMobile ? '24px' : '28px',
                 padding: 0,
-                lineHeight: 1
+                lineHeight: 1,
+                minWidth: isMobile ? '28px' : '32px',
+                minHeight: isMobile ? '28px' : '32px',
+                marginLeft: '8px'
               }}
             >×</button>
           </div>
@@ -497,75 +632,97 @@ export default function PoloGroundsMap() {
             display: 'inline-block',
             background: typeConfig[selectedGround.type].bg,
             color: typeConfig[selectedGround.type].color,
-            padding: '6px 12px',
-            borderRadius: '4px',
-            fontSize: '12px',
+            padding: isMobile ? '4px 8px' : '6px 12px',
+            borderRadius: '3px',
+            fontSize: isMobile ? '9px' : '11px',
             fontWeight: '600',
-            marginBottom: '16px',
-            letterSpacing: '0.5px',
+            marginBottom: isMobile ? '8px' : '16px',
+            letterSpacing: '0.3px',
             textTransform: 'uppercase'
           }}>
             {typeConfig[selectedGround.type].icon} {selectedGround.type}
           </div>
 
-          <div style={{ marginBottom: '12px' }}>
+          <div style={{ marginBottom: isMobile ? '8px' : '12px' }}>
             <div style={{
-              fontSize: '13px',
-              marginBottom: '8px',
-              color: '#555'
+              fontSize: isMobile ? '10px' : '13px',
+              marginBottom: isMobile ? '4px' : '8px',
+              color: '#555',
+              lineHeight: '1.3'
             }}>
               <strong>Location:</strong> {selectedGround.district}, {selectedGround.region}
             </div>
             <div style={{
-              fontSize: '13px',
+              fontSize: isMobile ? '10px' : '13px',
               fontWeight: '600',
               color: typeConfig[selectedGround.type].color,
-              marginBottom: '12px'
+              marginBottom: isMobile ? '8px' : '12px'
             }}>
               <strong>Elevation:</strong> {selectedGround.elevation}
             </div>
           </div>
 
           <div style={{
-            fontSize: '13px',
+            fontSize: isMobile ? '10px' : '13px',
             color: '#666',
-            lineHeight: '1.6',
-            paddingTop: '12px',
+            lineHeight: isMobile ? '1.4' : '1.6',
+            paddingTop: isMobile ? '8px' : '12px',
             borderTop: '1px solid #e5e5e5',
-            marginBottom: '16px'
+            marginBottom: isMobile ? '10px' : '16px'
           }}>
             {selectedGround.notes}
           </div>
 
           {routeData && (
             <div style={{
-              padding: '14px',
+              padding: isMobile ? '10px 12px' : '14px',
               background: 'rgba(139,71,137,0.08)',
-              borderRadius: '6px',
-              borderLeft: `4px solid ${typeConfig.airport.color}`
+              borderRadius: '4px',
+              borderLeft: `3px solid ${typeConfig.airport.color}`
             }}>
-              <div style={{ fontWeight: '600', marginBottom: '10px', color: '#555', fontSize: '14px' }}>
+              <div style={{ 
+                fontWeight: '600', 
+                marginBottom: isMobile ? '7px' : '10px', 
+                color: '#555', 
+                fontSize: isMobile ? '11px' : '14px' 
+              }}>
                 {typeConfig.airport.icon} Travel Information
               </div>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '10px' : '12px', 
+                color: '#666', 
+                marginBottom: isMobile ? '4px' : '6px',
+                lineHeight: '1.4'
+              }}>
                 <strong>Nearest Airport:</strong> {routeData.nearestAirport.name} ({routeData.nearestAirport.code})
               </div>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px' }}>
+              <div style={{ 
+                fontSize: isMobile ? '10px' : '12px', 
+                color: '#666', 
+                marginBottom: isMobile ? '4px' : '6px',
+                lineHeight: '1.4'
+              }}>
                 <strong>Road Distance:</strong> {routeData.roadRoute.distance.toFixed(1)} km
               </div>
               {routeData.roadRoute.duration && (
-                <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px' }}>
+                <div style={{ 
+                  fontSize: isMobile ? '10px' : '12px', 
+                  color: '#666', 
+                  marginBottom: isMobile ? '4px' : '6px',
+                  lineHeight: '1.4'
+                }}>
                   <strong>Drive Time:</strong> ~{Math.round(routeData.roadRoute.duration)} minutes
                 </div>
               )}
               {routeData.flightInfo && (
                 <div style={{
-                  fontSize: '11px',
+                  fontSize: isMobile ? '9px' : '11px',
                   color: '#888',
-                  marginTop: '10px',
-                  paddingTop: '10px',
+                  marginTop: isMobile ? '6px' : '10px',
+                  paddingTop: isMobile ? '6px' : '10px',
                   borderTop: '1px solid rgba(0,0,0,0.1)',
-                  fontStyle: 'italic'
+                  fontStyle: 'italic',
+                  lineHeight: '1.3'
                 }}>
                   Via Islamabad: {routeData.flightInfo.distance.toFixed(0)} km flight to {routeData.nearestAirport.code} (~{routeData.flightInfo.time})
                 </div>
@@ -575,40 +732,31 @@ export default function PoloGroundsMap() {
 
           {loadingRoute && (
             <div style={{
-              fontSize: '12px',
+              fontSize: isMobile ? '10px' : '12px',
               color: '#999',
               textAlign: 'center',
-              padding: '12px',
+              padding: isMobile ? '8px' : '12px',
               fontStyle: 'italic'
             }}>
-              Loading route information...
+              Loading route...
             </div>
           )}
-
-          <div style={{
-            marginTop: '16px',
-            paddingTop: '12px',
-            borderTop: '1px solid #e5e5e5',
-            fontSize: '11px',
-            color: '#999',
-            fontStyle: 'italic',
-            textAlign: 'center'
-          }}>
-            Future: Social media links & activity schedule
-          </div>
         </div>
       )}
 
       {/* MAP */}
       <MapContainer
         center={[35.8, 74.0]}
-        zoom={7}
+        zoom={isMobile ? 6 : 7}
         style={{
-          height: 'calc(100vh - 185px)',
+          height: isMobile 
+            ? 'calc(100vh - 130px)' 
+            : 'calc(100vh - 185px)',
           width: '100%',
           animation: 'fadeIn 0.8s ease'
         }}
         onClick={handleMapClick}
+        zoomControl={true}
       >
         <TileLayer
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
@@ -618,7 +766,7 @@ export default function PoloGroundsMap() {
         {/* POLO GROUND MARKERS */}
         {visible.map((g, i) => {
           const isSelected = selectedGround === g;
-          const isHovered = hoveredGround === i;
+          const isHovered = !isMobile && hoveredGround === i;
           const showLabel = isSelected || isHovered;
           const hasActiveRoute = selectedGround !== null;
           const isPartOfRoute = isSelected;
@@ -640,8 +788,8 @@ export default function PoloGroundsMap() {
               icon={markerIcon(g.type, g.name, showLabel, false, labelPosition)}
               opacity={opacity}
               eventHandlers={{
-                mouseover: () => setHoveredGround(i),
-                mouseout: () => setHoveredGround(null),
+                mouseover: () => !isMobile && setHoveredGround(i),
+                mouseout: () => !isMobile && setHoveredGround(null),
                 click: (e) => {
                   L.DomEvent.stopPropagation(e);
                   handleGroundClick(g);
@@ -654,10 +802,7 @@ export default function PoloGroundsMap() {
         {/* AIRPORT MARKERS */}
         {airports.map((airport, i) => {
           const isSelectedAirport = routeData && routeData.nearestAirport.code === airport.code;
-          const isHovered = hoveredAirport === i;
-          // show label when hovered OR it's the route's airport (selectedAirport)
-          // BUT earlier you said label-position logic only needed when clicked and route displayed.
-          // we follow that: only compute directional label when airport is selected via route.
+          const isHovered = !isMobile && hoveredAirport === i;
           const showLabel = isSelectedAirport || isHovered;
           const hasActiveRoute = routeData !== null;
 
@@ -678,8 +823,8 @@ export default function PoloGroundsMap() {
               icon={markerIcon('airport', airport.name, showLabel, true, labelPosition)}
               opacity={opacity}
               eventHandlers={{
-                mouseover: () => setHoveredAirport(i),
-                mouseout: () => setHoveredAirport(null)
+                mouseover: () => !isMobile && setHoveredAirport(i),
+                mouseout: () => !isMobile && setHoveredAirport(null)
               }}
             />
           );
@@ -687,55 +832,61 @@ export default function PoloGroundsMap() {
 
         {/* ROUTE LINES */}
         {routeData && (
-          <>
-            <Polyline
-              positions={routeData.roadRoute.coordinates}
-              pathOptions={{
-                color: typeConfig[selectedGround.type].color,
-                weight: 4,
-                opacity: 0.8,
-                dashArray: '10, 5'
-              }}
-            />
-          </>
+          <Polyline
+            positions={routeData.roadRoute.coordinates}
+            pathOptions={{
+              color: typeConfig[selectedGround.type].color,
+              weight: 4,
+              opacity: 0.8,
+              dashArray: '10, 5'
+            }}
+          />
         )}
       </MapContainer>
 
-      {/* FOOTER */}
-      <div style={{
-        position: 'absolute',
-        bottom: '12px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        background: 'rgba(255,255,255,0.95)',
-        padding: '8px 20px',
-        borderRadius: '20px',
-        border: '1px solid #d0cdc5',
-        fontSize: '12px',
-        color: '#666',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-        fontFamily: 'Georgia, serif',
-        zIndex: 500
-      }}>
-        {selectedGround ? (
-          <span>
-            Showing route to <strong style={{ color: typeConfig[selectedGround.type].color }}>{selectedGround.name}</strong>
-            {' • '}
-            <span
-              onClick={handleMapClick}
-              style={{
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                color: '#999'
-              }}
-            >
-              Clear route
+      {/* FOOTER - Hidden on mobile when info panel is open */}
+      {(!isMobile || !selectedGround) && (
+        <div style={{
+          position: 'absolute',
+          bottom: '12px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(255,255,255,0.95)',
+          padding: isMobile ? '6px 16px' : '8px 20px',
+          borderRadius: '20px',
+          border: '1px solid #d0cdc5',
+          fontSize: isMobile ? '11px' : '12px',
+          color: '#666',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+          fontFamily: 'Georgia, serif',
+          zIndex: 500,
+          maxWidth: isMobile ? 'calc(100% - 32px)' : 'auto',
+          textAlign: 'center'
+        }}>
+          {selectedGround ? (
+            <span>
+              Route to <strong style={{ color: typeConfig[selectedGround.type].color }}>{selectedGround.name}</strong>
+              {!isMobile && (
+                <>
+                  {' • '}
+                  <span
+                    onClick={handleMapClick}
+                    style={{
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      color: '#999'
+                    }}
+                  >
+                    Clear
+                  </span>
+                </>
+              )}
             </span>
-          </span>
-        ) : (
-          `Displaying ${visible.length} of ${poloGrounds.length} grounds`
-        )}
-      </div>
+          ) : (
+            `${visible.length} of ${poloGrounds.length} grounds`
+          )}
+        </div>
+      )}
     </div>
   );
 }
